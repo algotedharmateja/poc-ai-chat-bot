@@ -2,3 +2,10 @@ langchain-openai==0.3.11
 fastapi==0.115.12
 uvicorn==0.34.0
 langchain-qdrant==0.2.0
+qdrant-client==1.14.2
+llama-index-embeddings-azure-openai==0.3.7
+llama-index-llms-azure-openai==0.3.3
+llama-index==0.12.40
+llama-index-vector-stores-qdrant==0.6.0
+ipython
+python-multipart==0.0.20
