@@ -7,6 +7,9 @@ from langchain_core.messages import HumanMessage, AIMessage
 import logging
 import os
 import shutil
+import json
+
+from dotenv import load_dotenv
 
 from llama_index.llms.azure_openai import AzureOpenAI
 from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
@@ -14,6 +17,7 @@ from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
 from llama_index.core import Settings
 
 import qdrant_client
+
 from IPython.display import Markdown, display
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 from llama_index.core import StorageContext
@@ -23,6 +27,7 @@ from llama_index.core.tools import QueryEngineTool
 from llama_index.core.agent.workflow import FunctionAgent
 
 from llama_index.core.workflow import Context
+from llama_index.core.agent.workflow import AgentStream, ToolCallResult
 
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
@@ -46,8 +51,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-azure_endpoint="https://evaln-openai.openai.azure.com/"
-api_key="<key>"
+load_dotenv()
+
+azure_endpoint=os.getenv("AZURE_ENDPOINT")
+api_key=os.getenv("API_KEY")
 api_version="2024-05-01-preview"
 
 def get_llm():
@@ -116,6 +123,43 @@ try:
 except Exception as e:
     logger.error(f"❌ Azure chat init failed: {e}")
     raise e
+
+def get_collection_agent_response(collection_name : str = "default", query : str = ""):
+    vector_store = QdrantVectorStore(aclient=qdaclient, collection_name=collection_name)
+    loaded_index = VectorStoreIndex.from_vector_store(
+        vector_store,
+        # Embedding model should match the original embedding model
+        # embed_model=Settings.embed_model
+    )
+    qq_engine = loaded_index.as_query_engine(similarity_top_k=3)
+
+    retrieval_tool = QueryEngineTool.from_defaults(
+        query_engine=qq_engine,
+        name="retrieval_engine",
+        description=(
+            "Use this retrieval tool to get information from indexed documents"
+            "Use a detailed plain text question as input to the tool."
+        ),
+    )
+
+    # Create an agent workflow with our retrieval tool
+    retrieval_agent = FunctionAgent(
+        name="RetrievalAgent",
+        tools=[retrieval_tool],
+        llm=llama_idx_llm,
+        system_prompt="You are a helpful assistant that retrieves information using the retrieval tool",
+    )
+
+    if collection_name in ctx_map:
+        agent_ctx = ctx_map.get(collection_name, None)
+    else:
+        agent_ctx = Context(retrieval_agent)
+        ctx_map[collection_name] = agent_ctx
+
+    handler = retrieval_agent.run(query,ctx=agent_ctx)
+
+    return handler
+
 
 # Stream LLM response
 def stream_response(llm, query):
@@ -204,44 +248,45 @@ async def upload_and_index(collection_name: str = None, file: UploadFile = File(
         logger.exception("File upload and indexing failed")
         return JSONResponse(status_code=500, content={"error": f"{str(e)}"})
 
-# [TODO] Make it a streaming response with citations
 @app.post("/ask-collection-agent/")
 async def ask_collection_agent(collection_name: str = None, query: str=None):
     try:
-        vector_store = QdrantVectorStore(aclient=qdaclient, collection_name=collection_name)
-        loaded_index = VectorStoreIndex.from_vector_store(
-            vector_store,
-            # Embedding model should match the original embedding model
-            # embed_model=Settings.embed_model
-        )
-        qq_engine = loaded_index.as_query_engine(similarity_top_k=3)
-
-        retrieval_tool = QueryEngineTool.from_defaults(
-            query_engine=qq_engine,
-            name="retrieval_engine",
-            description=(
-                "Use this retrieval tool to get information from indexed documents"
-                "Use a detailed plain text question as input to the tool."
-            ),
-        )
-
-        # Create an agent workflow with our retrieval tool
-        retrieval_agent = FunctionAgent(
-            name="RetrievalAgent",
-            tools=[retrieval_tool],
-            llm=llama_idx_llm,
-            system_prompt="You are a helpful assistant that retrieves information using the retrieval tool",
-        )
-
-        if collection_name in ctx_map:
-            agent_ctx = ctx_map.get(collection_name, None)
-        else:
-            agent_ctx = Context(retrieval_agent)
-            ctx_map[collection_name] = agent_ctx
-
-        response = await retrieval_agent.run(query,ctx=agent_ctx)
-
+        handler = get_collection_agent_response(collection_name, query)
+        response = await handler
         return {"response": f"{str(response)}"}
     except Exception as e:
         logger.exception("Collection agent response failed")
         return JSONResponse(status_code=500, content={"error": f"{str(e)}"})
+
+# [TODO] Make it a streaming response with citations
+@app.post("/stream-collection-agent/")
+async def ask_collection_agent(collection_name: str = None, query: str=None):
+    try:
+        handler = get_collection_agent_response(collection_name, query)
+        logger.info(f"collection agent ({collection_name}) response for:{query}")
+        async def stream_response(handler):
+            async for event in handler.stream_events():
+                if isinstance(event, AgentStream):
+                        logger.info(event)
+                        yield json.dumps({
+                            "type": "output_chunk",
+                            "chunk": event.delta
+                        }) + "\n"
+                elif isinstance(event, ToolCallResult):
+                        logger.info(event)
+                        raw_output = event.tool_output.raw_output
+                        for source_node in raw_output.source_nodes:
+                                yield json.dumps({
+                                    "type": "citation",
+                                    "citation": {
+                                        "content": source_node.get_content(),
+                                        "score": source_node.get_score(),
+                                        "metadata": source_node.metadata
+                                    }
+                                }) + "\n"
+
+        return StreamingResponse(stream_response(handler), media_type="text/event-stream")
+    except Exception as e:
+        logger.exception("Collection agent response failed")
+        return JSONResponse(status_code=500, content={"error": f"{str(e)}"})
+
