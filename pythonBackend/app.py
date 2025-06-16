@@ -1,9 +1,17 @@
-from fastapi import FastAPI, Request
+import asyncio
+from typing import Optional
+
+from starlette import status
+from sse_starlette import EventSourceResponse, ServerSentEvent
+
+from fastapi import FastAPI, Request, Depends, status, BackgroundTasks
 from fastapi import UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+
 from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage
+
 import logging
 import os
 import shutil
@@ -23,6 +31,9 @@ from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 from llama_index.core import StorageContext
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 
+from llama_index.node_parser.docling import DoclingNodeParser
+from llama_index.readers.docling import DoclingReader
+
 from llama_index.core.tools import QueryEngineTool
 from llama_index.core.agent.workflow import FunctionAgent
 
@@ -39,8 +50,30 @@ logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+
+class Stream:
+    def __init__(self) -> None:
+        self._queue: Optional[asyncio.Queue[ServerSentEvent]] = None
+
+    @property
+    def queue(self) -> asyncio.Queue[ServerSentEvent]:
+        if self._queue is None:
+            self._queue = asyncio.Queue[ServerSentEvent]()
+        return self._queue
+
+    def __aiter__(self) -> "Stream":
+        return self
+
+    async def __anext__(self) -> ServerSentEvent:
+        return await self.queue.get()
+
+    async def asend(self, value: ServerSentEvent) -> None:
+        await self.queue.put(value)
+
+
 # Initialize FastAPI app
 app = FastAPI()
+_stream = Stream()
 
 # CORS setup
 app.add_middleware(
@@ -180,6 +213,10 @@ def stream_summary(llm):
     for chunk in llm.stream(history_for_summary):
         yield chunk.content
 
+@app.get("/sse")
+async def sse(stream: Stream = Depends(lambda: _stream)) -> EventSourceResponse:
+    return EventSourceResponse(stream)
+
 @app.get("/")
 def read_root():
     return {"message": "Hello, World!"}
@@ -213,6 +250,54 @@ async def summary():
     except Exception as e:
         logger.error(f"❌ Error in /summary/: {e}")
         return {"error": "Failed to process summary request."}
+
+
+async def start_indexing(collection_name: str, file_path: str, stream: Stream = Depends(lambda: _stream)):
+    # [TODO] Add Docling indexing code here
+    # 
+    reader = DoclingReader(export_type=DoclingReader.ExportType.JSON)
+    node_parser = DoclingNodeParser()
+
+    vector_store = QdrantVectorStore(client=qdclient, collection_name=collection_name)
+    storage_context = StorageContext.from_defaults(vector_store=vector_store)
+
+    documents = reader.load_data(file_path)
+    VectorStoreIndex.from_documents(
+        documents,
+        transformations=[node_parser],
+        storage_context=storage_context,
+    )
+    await stream.asend(ServerSentEvent(data=f"Indexing complete for {file_path} in collection {collection_name}"))
+
+
+@app.post("/upload-start-indexing/", status_code=status.HTTP_202_ACCEPTED)
+async def upload_and_start_indexing(
+    background_tasks: BackgroundTasks,
+    collection_name: str = None, file: UploadFile = File(...),
+    stream: Stream = Depends(lambda: _stream)
+) -> dict:
+    try:
+        # Ensure the uploads directory exists
+        if not os.path.exists(UPLOAD_DIR):
+            os.makedirs(UPLOAD_DIR)
+
+        # Ensure the collection-specific directory exists
+        collection_dir = os.path.join(UPLOAD_DIR, collection_name)
+        if not os.path.exists(collection_dir):
+            os.makedirs(collection_dir)
+
+        # Save the uploaded file to the server
+        file_path = os.path.join(collection_dir, file.filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        background_tasks.add_task(start_indexing, collection_name, file_path, stream)
+
+        return {"message": f"File '{file.filename}' uploaded successfully and indexing started"}
+    except Exception as e:
+        logger.exception("File upload and indexing failed")
+        return JSONResponse(status_code=500, content={"error": f"{str(e)}"})
+
 
 # [TODO] Support multiple file uploads with indexing in the background
 # How does the user know that the indexing is done? Events? Notifications?

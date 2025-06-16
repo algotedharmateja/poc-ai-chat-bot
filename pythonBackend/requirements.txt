@@ -9,3 +9,6 @@ llama-index==0.12.40
 llama-index-vector-stores-qdrant==0.6.0
 ipython
 python-multipart==0.0.20
+sse-starlette==2.3.6
+llama-index-readers-docling==0.3.3
+llama-index-node-parser-docling==0.3.2
