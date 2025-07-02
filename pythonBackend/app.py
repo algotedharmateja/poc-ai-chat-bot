@@ -4,7 +4,7 @@ from typing import Optional
 from starlette import status
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
-from fastapi import FastAPI, Request, Depends, status, BackgroundTasks
+from fastapi import FastAPI, Request, Depends, status, BackgroundTasks, Form
 from fastapi import UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -50,6 +50,9 @@ logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+class CollectionRequest(BaseModel):
+    collection_name: str
+    query: str
 
 class Stream:
     def __init__(self) -> None:
@@ -122,8 +125,6 @@ def init_azure_llm():
         streaming=True,
     )
 
-class CollectionRequest(BaseModel):
-    collection_name: str
 
 llama_idx_llm = get_llm()
 embed_model = get_embedder()
@@ -302,7 +303,7 @@ async def upload_and_start_indexing(
 # [TODO] Support multiple file uploads with indexing in the background
 # How does the user know that the indexing is done? Events? Notifications?
 @app.post("/upload-file/")
-async def upload_and_index(collection_name: str = None, file: UploadFile = File(...)):
+async def upload_and_index(collection_name: str = Form(...), file: UploadFile = File(...)):
     try:
         # Ensure the uploads directory exists
         if not os.path.exists(UPLOAD_DIR):
@@ -345,8 +346,11 @@ async def ask_collection_agent(collection_name: str = None, query: str=None):
 
 # [TODO] Make it a streaming response with citations
 @app.post("/stream-collection-agent/")
-async def ask_collection_agent(collection_name: str = None, query: str=None):
+async def ask_collection_agent(query_payload: CollectionRequest):
+    collection_name = query_payload.collection_name
+    query = query_payload.query
     try:
+        logger.info(f"collection name: ({collection_name})")
         handler = get_collection_agent_response(collection_name, query)
         logger.info(f"collection agent ({collection_name}) response for:{query}")
         async def stream_response(handler):
