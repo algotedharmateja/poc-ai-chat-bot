@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect} from "react";
 import "./StreamingAnswer.css";
 import FileUpload from './FileUpload';
 
@@ -14,6 +14,29 @@ const StreamingAnswer: React.FC = () => {
   const [citationResponse, setCitationResponse] = useState("");
   const [citations, setCitations] = useState<string[]>([]);
   const [citationLoading, setCitationLoading] = useState(false);
+
+  const [notifications, setNotifications] = useState<string[]>([]);
+
+  useEffect(() => {
+    const eventSource = new EventSource("http://localhost:9000/sse"); // adjust URL if needed
+
+    eventSource.onmessage = (event) => {
+      // Append new notification to list
+      setNotifications((prev) => [...prev, event.data]);
+    };
+
+    eventSource.onerror = (err) => {
+      console.error("SSE connection error:", err);
+      eventSource.close(); // Optionally close on error
+    };
+
+    // Cleanup on unmount
+    return () => {
+      eventSource.close();
+    };
+  }, []);
+
+
 
   const handleCitationQuery = async () => {
     if (!citationQuery.trim()) return;
@@ -174,6 +197,15 @@ const StreamingAnswer: React.FC = () => {
     <>
     <div className="streaming-container">
       <h1 className="streaming-heading">Streaming LLM Answer</h1>
+
+      <div className="notifications-container">
+        <h2>Notifications</h2>
+        <ul>
+          {notifications.map((note, index) => (
+            <li key={index}>{note}</li>
+          ))}
+        </ul>
+      </div>
 
       <div className="streaming-input-container">
         <input

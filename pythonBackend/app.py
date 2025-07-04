@@ -256,25 +256,36 @@ async def summary():
 async def start_indexing(collection_name: str, file_path: str, stream: Stream = Depends(lambda: _stream)):
     # [TODO] Add Docling indexing code here
     # 
+    await stream.asend(ServerSentEvent(data=f"Indexing started"))
+
     reader = DoclingReader(export_type=DoclingReader.ExportType.JSON)
     node_parser = DoclingNodeParser()
+
+    await stream.asend(ServerSentEvent(data=f"Reader initialized"))
 
     vector_store = QdrantVectorStore(client=qdclient, collection_name=collection_name)
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
+    await stream.asend(ServerSentEvent(data=f"Storage context fetched"))
+    await stream.asend(ServerSentEvent(data=f"Reader started loading data"))
+
     documents = reader.load_data(file_path)
+
+    await stream.asend(ServerSentEvent(data=f"Indexing started"))
+
     VectorStoreIndex.from_documents(
         documents,
         transformations=[node_parser],
         storage_context=storage_context,
     )
+
     await stream.asend(ServerSentEvent(data=f"Indexing complete for {file_path} in collection {collection_name}"))
 
 
 @app.post("/upload-start-indexing/", status_code=status.HTTP_202_ACCEPTED)
 async def upload_and_start_indexing(
     background_tasks: BackgroundTasks,
-    collection_name: str = None, file: UploadFile = File(...),
+    collection_name: str = Form(...), file: UploadFile = File(...),
     stream: Stream = Depends(lambda: _stream)
 ) -> dict:
     try:
