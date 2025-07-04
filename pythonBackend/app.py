@@ -257,21 +257,25 @@ async def start_indexing(collection_name: str, file_path: str, stream: Stream = 
     # [TODO] Add Docling indexing code here
     # 
     await stream.asend(ServerSentEvent(data=f"Indexing started"))
+    await asyncio.sleep(0.1)
 
     reader = DoclingReader(export_type=DoclingReader.ExportType.JSON)
     node_parser = DoclingNodeParser()
 
     await stream.asend(ServerSentEvent(data=f"Reader initialized"))
+    await asyncio.sleep(0.1)
 
     vector_store = QdrantVectorStore(client=qdclient, collection_name=collection_name)
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
     await stream.asend(ServerSentEvent(data=f"Storage context fetched"))
     await stream.asend(ServerSentEvent(data=f"Reader started loading data"))
+    await asyncio.sleep(0.1)
 
     documents = reader.load_data(file_path)
 
     await stream.asend(ServerSentEvent(data=f"Indexing started"))
+    await asyncio.sleep(0.1)
 
     VectorStoreIndex.from_documents(
         documents,
