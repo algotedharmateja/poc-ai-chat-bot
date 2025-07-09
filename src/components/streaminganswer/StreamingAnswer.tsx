@@ -236,25 +236,24 @@ const StreamingAnswer: React.FC = () => {
         </div>
       </div>
 
-      <div className="summary-container">
-        <div>
-          <p>Upload file for indexing</p>
-          <FileUpload onFileSelect={handleFileSelect} onUpload={handleUpload} />
-        </div>
-      </div>
-    </div><div className="citation-agent-container">
-        <h2>Citation Agent Query</h2>
-        <div className="citation-agent-input">
-          <input
-            type="text"
-            value={citationQuery}
-            onChange={(e) => setCitationQuery(e.target.value)}
-            placeholder="Ask a question about indexed files..." />
-          <button onClick={handleCitationQuery} disabled={citationLoading}>
-            {citationLoading ? "Loading..." : "Submit"}
-          </button>
-        </div>
+    </div>
+    <div className="citation-agent-container">
+      <h2>Citation Agent Query</h2>
 
+      <div className="citation-agent-input">
+        <input
+          type="text"
+          value={citationQuery}
+          onChange={(e) => setCitationQuery(e.target.value)}
+          placeholder="Ask a question about indexed files..."
+        />
+        <button onClick={handleCitationQuery} disabled={citationLoading}>
+          {citationLoading ? "Loading..." : "Submit"}
+        </button>
+      </div>
+
+      {/* Flex layout for response + upload */}
+      <div className="agent-results-layout">
         <div className="citation-output-wrapper">
           <div className="citation-output-box">
             <h3>Answer</h3>
@@ -272,7 +271,15 @@ const StreamingAnswer: React.FC = () => {
             </div>
           </div>
         </div>
-      </div></>
+
+        <div className="upload-container">
+          <p>Upload file for indexing</p>
+          <FileUpload onFileSelect={handleFileSelect} onUpload={handleUpload} />
+        </div>
+      </div>
+    </div>
+
+    </>
 
 
     

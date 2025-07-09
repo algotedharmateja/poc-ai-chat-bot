@@ -78,6 +78,80 @@
   border-radius: 16px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
+.citation-agent-container {
+  padding: 2rem;
+  font-family: Arial, sans-serif;
+}
+
+.citation-agent-input {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.citation-agent-input input {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+}
+
+.citation-agent-input button {
+  padding: 0.5rem 1rem;
+  background-color: #4b79ff;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.citation-agent-input button:disabled {
+  background-color: #999;
+  cursor: not-allowed;
+}
+
+/* Flex layout for results + upload */
+.agent-results-layout {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 2rem;
+  flex-wrap: wrap; /* Stacks on smaller screens */
+}
+
+/* Left side: Output */
+.citation-output-wrapper {
+  flex: 2;
+  min-width: 300px;
+}
+
+.citation-output-box {
+  background-color: #f9f9f9;
+  padding: 1rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+  margin-bottom: 1rem;
+}
+
+.citation-output-box h3 {
+  margin-top: 0;
+}
+
+/* Right side: Upload */
+.upload-container {
+  flex: 1;
+  min-width: 250px;
+  padding: 1rem;
+  background-color: rgb(241, 147, 147);
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  margin-top: 0; /* Aligns with top of output */
+}
+
+.upload-container p {
+  margin-top: 0;
+}
+
 
 /* Streaming Output */
 .streaming-output-container {
